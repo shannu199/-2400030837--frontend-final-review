@@ -1,0 +1,569 @@
+<!doctype html>
+<!--
+  Internship Mock — Single-file (index.html)
+  - Student login form (initial screen) + Admin button that opens an Admin-login modal.
+  - Admin dashboard is shown only after successful admin login (same SPA).
+  - Student dashboard stays the same and can open the Admin-login modal as well.
+
+  Modified: admin actions (Accept/Reject) now require (and store) an admin comment.
+  Stored comment is visible in Admin table and Student portal (as a message under each application).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Internship Mock — Login + Admin Modal</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial; margin:0; background:#f7f4f8; color:#111; }
+    .container { max-width:1100px; margin:36px auto; padding:20px; }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+    h1 { margin:0; font-size:20px; }
+    .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+    .card { background:#fff; border-radius:12px; padding:16px; box-shadow:0 6px 18px rgba(12,20,30,0.06); border:1px solid #e6eaee; }
+    .card h3 { margin:0 0 6px 0; font-size:16px; }
+    .meta { font-size:13px; color:#556; margin-bottom:10px; }
+    .badge { display:inline-block; padding:6px 8px; border-radius:999px; font-size:12px; background:#eef3ff; color:#1e3a8a; margin-right:8px; }
+    .btn { cursor:pointer; border:0; padding:8px 12px; border-radius:8px; font-weight:600; }
+    .btn-primary { background:#2563eb; color:#fff; }
+    .btn-ghost { background:transparent; color:#2563eb; border:1px solid rgba(37,99,235,0.12); }
+    .btn-danger { background:#ef4444; color:#fff; }
+    .login-wrap { max-width:720px; margin:36px auto; background:#fff; padding:22px; border-radius:12px; box-shadow:0 10px 30px rgba(16,24,40,0.06); display:flex; gap:20px; align-items:center; }
+    .login-left { flex:1; }
+    .login-right { width:320px; background:#fbfdff; padding:16px; border-radius:10px; border:1px solid #eef6ff; }
+    label { display:block; font-size:13px; color:#334; margin-bottom:6px; }
+    input, textarea { width:100%; padding:10px; border-radius:8px; border:1px solid #dbe6f0; font-size:14px; }
+    textarea { min-height:90px; resize:vertical; }
+    .muted { color:#637381; font-size:13px; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(5,10,15,0.45); display:flex; align-items:center; justify-content:center; z-index:60; }
+    .modal { width:560px; max-width:94%; background:#fff; border-radius:12px; padding:20px; box-shadow:0 12px 40px rgba(8,12,18,0.24); }
+    .modal-title { margin:0 0 8px 0; font-size:18px; }
+    table { width:100%; border-collapse:collapse; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 6px 18px rgba(12,20,30,0.04); }
+    th, td { padding:10px 12px; text-align:left; border-bottom:1px solid #eef2f6; font-size:13px; vertical-align:top; }
+    th { background:#fafbfc; font-weight:600; color:#223; }
+    .status { padding:6px 8px; border-radius:999px; font-size:12px; display:inline-block; }
+    .status-pending { background:#fff7ed; color:#b45309; }
+    .status-accepted { background:#ecfdf5; color:#0f5132; }
+    .status-rejected { background:#fff1f2; color:#7f1d1d; }
+    .toast-wrap { position:fixed; right:20px; bottom:20px; z-index:100; display:flex; flex-direction:column; gap:10px; }
+    .toast { background:#111827; color:#fff; padding:10px 14px; border-radius:10px; min-width:220px; box-shadow:0 8px 30px rgba(2,6,23,0.35); }
+    .toast.destructive { background:#7f1d1d; }
+    .help-link { font-size:13px; color:#4b5563; text-decoration:underline; cursor:pointer; }
+    .app-message { margin-top:6px; font-size:13px; background:#f8fafc; border-left:3px solid #e6eef8; padding:8px 10px; border-radius:6px; color:#1f2937; }
+    @media (max-width:840px) {
+      .login-wrap { flex-direction:column; gap:12px; padding:16px; }
+      .login-right { width:100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="app"></div>
+
+  <!-- Toasts -->
+  <div class="toast-wrap" id="toasts"></div>
+
+  <!-- Modal root -->
+  <div id="modal-root" style="display:none;"></div>
+
+  <script>
+    /************************************************************************
+     * Demo dataset (client-only)
+     * In production: use a backend for auth and data persistence.
+     ************************************************************************/
+    const internships = [
+      { id:1, company:"TechCorp Solutions", role:"Frontend Developer Intern", location:"Remote", type:"Remote", vacancies:8, description:"Build web apps with React & TypeScript.", qualifications:["React.js","HTML/CSS","Git"], stipend:"$1200/mo" },
+      { id:2, company:"DataMinds", role:"Data Engineering Intern", location:"Hyderabad", type:"Hybrid", vacancies:2, description:"Work with ETL & pipelines.", qualifications:["SQL","Python"], stipend:"$800/mo" },
+      { id:3, company:"DesignWorks", role:"UI/UX Intern", location:"Bangalore", type:"On-site", vacancies:1, description:"Support designers in prototyping.", qualifications:["Figma","Wireframing"], stipend:"$400/mo" }
+    ];
+
+    const studentProfile = { name:"Student User", id:"2400030001", email:"2400030001@kluniversity.in", major:"Computer Science", gpa:"9.8", skills:["Java","Python","React"] };
+
+    // initial demo applications — note: comment field added (null by default)
+    let mockApplications = [
+      { id:101, internshipId:1, studentId:"2400030001", studentName:"Student User", major:"Computer Science", gpa:"8.8", languages:["Java","Python"], status:"Pending", appliedDate:"2024-11-20", comment: null }
+    ];
+
+    // Demo admin creds (DEMO ONLY)
+    const DEMO_ADMIN_USER = '001';
+    const DEMO_ADMIN_PASS = 'klu@123';
+
+    const appEl = document.getElementById('app');
+    const modalRoot = document.getElementById('modal-root');
+
+    /**********************
+     * Utility helpers
+     **********************/
+    function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,"&#039;"); }
+    function showToast({ title = '', variant = 'default', ttl = 2600 } = {}) {
+      const container = document.getElementById('toasts');
+      const t = document.createElement('div');
+      t.className = 'toast' + (variant === 'destructive' ? ' destructive' : '');
+      t.innerHTML = '<strong style="display:block;margin-bottom:4px;">' + escapeHtml(title) + '</strong>';
+      container.appendChild(t);
+      setTimeout(() => t.style.opacity = 0.02, ttl - 200);
+      setTimeout(() => { try { container.removeChild(t); } catch(e){} }, ttl);
+    }
+    function maskId(id) {
+      if (!id || id.length < 4) return id || '';
+      const visible = 3;
+      return id.slice(0, id.length - visible).replace(/./g, '*') + id.slice(-visible);
+    }
+
+    /**********************
+     * App state
+     **********************/
+    let auth = { role: null, id: null }; // role: 'student' | 'admin' | null
+
+    /**********************
+     * Render: Main Login page (initial)
+     **********************/
+    function renderMainLogin() {
+      document.title = 'Internship Mock — Login';
+      appEl.innerHTML = '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'login-wrap';
+
+      wrap.innerHTML = `
+        <div class="login-left">
+          <h2 style="margin:0 0 10px 0">Student Sign in</h2>
+          <form id="studentLoginForm">
+            <div style="margin-bottom:12px;">
+              <label>User ID</label>
+              <input id="username" name="username" type="text" placeholder="User ID">
+            </div>
+            <div style="margin-bottom:12px;">
+              <label>Password</label>
+              <input id="password" name="password" type="password" placeholder="Password">
+            </div>
+
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+              <button class="btn btn-ghost" type="button" id="demoFill">Fill demo</button>
+              <button class="btn btn-primary" type="submit">Sign in</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="login-right">
+          <h3 style="margin:0 0 8px 0">Admin</h3>
+          <p class="muted" style="margin:0 0 12px 0">Click to sign in as Admin (modal will open).</p>
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <button class="btn btn-primary" id="adminOpenBtn">Admin Login</button>
+            <button class="btn btn-ghost" id="readmeBtn">Readme</button>
+          </div>
+          <div class="muted">Demo creds — Student: <code>2400030001 / klu@123</code><br/>Admin: <code>001 / klu@123</code></div>
+        </div>
+      `;
+
+      appEl.appendChild(wrap);
+
+      // handlers
+      document.getElementById('demoFill').addEventListener('click', () => {
+        document.getElementById('username').value = studentProfile.id;
+        document.getElementById('password').value = 'klu@123';
+      });
+
+      document.getElementById('studentLoginForm').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const u = document.getElementById('username').value.trim();
+        const p = document.getElementById('password').value;
+        handleStudentLogin(u, p);
+      });
+
+      // admin open button on main login page (feature requested)
+      document.getElementById('adminOpenBtn').addEventListener('click', () => {
+        openAdminLoginModal();
+      });
+
+      document.getElementById('readmeBtn').addEventListener('click', () => {
+        showToast({ title: 'Save as index.html and open with Live Server (VS Code).' });
+      });
+    }
+
+    function handleStudentLogin(username, password) {
+      showToast({ title: 'Signing in...' });
+      setTimeout(() => {
+        if (username === studentProfile.id && password === 'klu@123') {
+          auth = { role: 'student', id: username };
+          showToast({ title: 'Welcome back, Student!' });
+          renderStudentDashboard();
+        } else {
+          showToast({ title: 'Invalid student credentials', variant: 'destructive' });
+        }
+      }, 400);
+    }
+
+    /**********************
+     * Student Dashboard
+     **********************/
+    function renderStudentDashboard() {
+      document.title = 'Student Dashboard';
+      appEl.innerHTML = '';
+
+      const header = document.createElement('header');
+      header.innerHTML = `
+        <div>
+          <h1>Student Dashboard</h1>
+          <div class="muted">Logged in as <strong>${escapeHtml(studentProfile.name)}</strong> • ID: ${escapeHtml(maskId(studentProfile.id))}</div>
+        </div>
+        <div class="flex">
+          <button class="btn" id="openAdminFromDash">Go Admin</button>
+          <button class="btn btn-ghost" id="logoutBtn">Logout</button>
+        </div>
+      `;
+      appEl.appendChild(header);
+
+      const gridWrap = document.createElement('div');
+      gridWrap.innerHTML = `<h2 style="margin:10px 0 8px 0">Available Internships</h2><div class="card-grid" id="internGrid"></div>`;
+      appEl.appendChild(gridWrap);
+      const internGrid = document.getElementById('internGrid');
+
+      internships.forEach(i => {
+        const c = document.createElement('div');
+        c.className = 'card';
+        c.innerHTML = `
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
+            <div style="width:46px;height:46px;border-radius:10px;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-weight:700;color:#1e40af;">
+              ${escapeHtml(i.company.split(' ').map(s=>s[0]).join(''))}
+            </div>
+            <div style="flex:1;">
+              <h3>${escapeHtml(i.role)}</h3>
+              <div class="meta">${escapeHtml(i.company)} • ${escapeHtml(i.location)}</div>
+            </div>
+            <div style="text-align:right"><div class="badge">${escapeHtml(i.type)}</div></div>
+          </div>
+
+          <p class="muted">${escapeHtml(i.description)}</p>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div class="muted">Vacancies: <strong>${escapeHtml(String(i.vacancies))}</strong></div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-ghost view-btn" data-id="${i.id}">Details</button>
+              <button class="btn btn-primary apply-btn" data-id="${i.id}">Apply</button>
+            </div>
+          </div>
+        `;
+        internGrid.appendChild(c);
+      });
+
+      // Applications summary
+      const appsCard = document.createElement('div');
+      appsCard.className = 'card';
+      appsCard.style.marginTop = '16px';
+      appsCard.innerHTML = `<h3>Your Applications</h3><div id="myApps" style="margin-top:10px;"></div>`;
+      appEl.appendChild(appsCard);
+
+      renderMyApplications();
+
+      // actions
+      document.getElementById('logoutBtn').addEventListener('click', () => {
+        auth = { role: null, id: null };
+        renderMainLogin();
+      });
+
+      document.getElementById('openAdminFromDash').addEventListener('click', () => {
+        openAdminLoginModal();
+      });
+
+      internGrid.addEventListener('click', (ev) => {
+        const t = ev.target;
+        if (t.classList.contains('view-btn')) viewDetails(Number(t.dataset.id));
+        if (t.classList.contains('apply-btn')) openApply(Number(t.dataset.id));
+      });
+    }
+
+    function renderMyApplications() {
+      const el = document.getElementById('myApps');
+      el.innerHTML = '';
+      const mine = mockApplications.filter(a => a.studentId === studentProfile.id);
+      if (!mine.length) {
+        el.innerHTML = '<div class="muted">No applications yet.</div>';
+        return;
+      }
+      const list = document.createElement('div');
+      mine.forEach(a => {
+        const row = document.createElement('div');
+        row.style = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;flex-direction:column;align-items:stretch;';
+        row.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+            <div>
+              <div style="font-weight:600;">${escapeHtml(internships.find(i=>i.id===a.internshipId)?.role || '')}</div>
+              <div class="muted" style="font-size:13px;">Applied: ${escapeHtml(a.appliedDate)}</div>
+            </div>
+            <div>
+              <span class="status ${a.status === 'Pending' ? 'status-pending' : a.status === 'Accepted' ? 'status-accepted' : 'status-rejected'}">${escapeHtml(a.status)}</span>
+            </div>
+          </div>
+        `;
+
+        // show admin comment/messages to student (if present)
+        if (a.comment) {
+          const msg = document.createElement('div');
+          msg.className = 'app-message';
+          msg.innerHTML = `<strong>Message:</strong> ${escapeHtml(a.comment)}`;
+          row.appendChild(msg);
+        }
+
+        list.appendChild(row);
+      });
+      el.appendChild(list);
+    }
+
+    /**********************
+     * Modals (generic)
+     **********************/
+    function showModal(html) {
+      modalRoot.style.display = 'block';
+      modalRoot.innerHTML = `<div class="modal-backdrop"><div class="modal">${html}</div></div>`;
+      modalRoot.querySelector('.modal-backdrop').addEventListener('click', (e) => {
+        if (e.target.classList.contains('modal-backdrop')) closeModal();
+      });
+    }
+    function closeModal() { modalRoot.style.display = 'none'; modalRoot.innerHTML = ''; }
+
+    /**********************
+     * Details & Apply
+     **********************/
+    function viewDetails(id) {
+      const i = internships.find(x => x.id === id);
+      if (!i) return;
+      showModal(`
+        <h3 class="modal-title">${escapeHtml(i.role)} • ${escapeHtml(i.company)}</h3>
+        <p class="muted">${escapeHtml(i.description)}</p>
+        <p><strong>Qualifications:</strong></p>
+        <ul>${i.qualifications.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul>
+        <div style="display:flex;justify-content:flex-end;margin-top:14px;gap:8px;">
+          <button class="btn btn-ghost" id="closeDet">Close</button>
+          <button class="btn btn-primary" id="applyDet">Apply Now</button>
+        </div>
+      `);
+      document.getElementById('closeDet').addEventListener('click', closeModal);
+      document.getElementById('applyDet').addEventListener('click', () => { closeModal(); openApply(id); });
+    }
+
+    function openApply(id) {
+      const i = internships.find(x => x.id === id);
+      if (!i) return;
+      showModal(`
+        <h3 class="modal-title">Apply: ${escapeHtml(i.role)} @ ${escapeHtml(i.company)}</h3>
+        <form id="applyForm">
+          <label>Name<input name="name" value="${escapeHtml(studentProfile.name)}"></label>
+          <label>ID<input name="id" value="${escapeHtml(studentProfile.id)}"></label>
+          <label>Major<input name="major" value="${escapeHtml(studentProfile.major)}"></label>
+          <label>GPA<input name="gpa" value="${escapeHtml(studentProfile.gpa)}"></label>
+          <label>Languages<input name="languages" value="${escapeHtml(studentProfile.skills.join(', '))}"></label>
+          <div style="display:flex;justify-content:flex-end;margin-top:14px;gap:10px;">
+            <button class="btn btn-ghost" type="button" id="cancelApply">Cancel</button>
+            <button class="btn btn-primary" type="submit">Submit</button>
+          </div>
+        </form>
+      `);
+      document.getElementById('cancelApply').addEventListener('click', closeModal);
+      document.getElementById('applyForm').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(ev.target);
+        mockApplications.push({
+          id: Math.floor(200 + Math.random()*800),
+          internshipId: i.id,
+          studentId: fd.get('id'),
+          studentName: fd.get('name'),
+          major: fd.get('major'),
+          gpa: fd.get('gpa'),
+          languages: (fd.get('languages') || '').split(',').map(s => s.trim()).filter(Boolean),
+          status: "Pending",
+          appliedDate: new Date().toISOString().slice(0,10),
+          comment: null
+        });
+        closeModal();
+        showToast({ title: 'Application submitted!' });
+        renderMyApplications();
+      });
+    }
+
+    /**********************
+     * Admin Login Modal (available from main login page & student dashboard)
+     **********************/
+    function openAdminLoginModal() {
+      showModal(`
+        <h3 class="modal-title">Admin Sign in</h3>
+        <form id="adminLoginForm">
+          <div style="margin-bottom:10px;">
+            <label>Admin ID<input name="adminId" id="adminId" type="text" placeholder="Admin ID"></label>
+          </div>
+          <div style="margin-bottom:10px;">
+            <label>Password<input name="adminPass" id="adminPass" type="password" placeholder="Password"></label>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:10px;">
+            <button class="btn btn-ghost" type="button" id="adminCancel">Cancel</button>
+            <button class="btn btn-primary" type="submit">Sign in</button>
+          </div>
+        </form>
+      `);
+
+      document.getElementById('adminCancel').addEventListener('click', closeModal);
+      document.getElementById('adminLoginForm').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const id = document.getElementById('adminId').value.trim();
+        const pass = document.getElementById('adminPass').value;
+        simulateAdminLogin(id, pass);
+      });
+    }
+
+    function simulateAdminLogin(id, pass) {
+      showToast({ title: 'Signing in as admin...' });
+      setTimeout(() => {
+        if (id === DEMO_ADMIN_USER && pass === DEMO_ADMIN_PASS) {
+          auth = { role: 'admin', id };
+          closeModal();
+          showToast({ title: 'Welcome, Admin!' });
+          renderAdminDashboard();
+        } else {
+          showToast({ title: 'Invalid admin credentials', variant: 'destructive' });
+        }
+      }, 350);
+    }
+
+    /**********************
+     * Admin Dashboard (in-place)
+     * - Now includes 'Comment' column and an admin comment flow when accepting/rejecting.
+     **********************/
+    function renderAdminDashboard() {
+      document.title = 'Admin Dashboard';
+      appEl.innerHTML = `
+        <header>
+          <div>
+            <h1>Admin Dashboard</h1>
+            <div class="muted">Signed in as Admin • ID: ${escapeHtml(DEMO_ADMIN_USER)}</div>
+          </div>
+          <div class="flex">
+            <button class="btn" id="goStudentBtn">Go Student</button>
+            <button class="btn btn-ghost" id="adminLogoutBtn">Logout</button>
+          </div>
+        </header>
+
+        <div class="card">
+          <h3>Applications</h3>
+          <table id="appsTable">
+            <thead>
+              <tr>
+                <th>#</th><th>Student</th><th>Internship</th><th>Major/GPA</th><th>Languages</th><th>Date</th><th>Status</th><th>Comment</th><th>Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      `;
+
+      document.getElementById('goStudentBtn').addEventListener('click', () => {
+        auth = { role: 'student', id: studentProfile.id };
+        renderStudentDashboard();
+      });
+
+      document.getElementById('adminLogoutBtn').addEventListener('click', () => {
+        auth = { role: null, id: null };
+        renderMainLogin();
+      });
+
+      refreshAdminTable();
+    }
+
+    function refreshAdminTable() {
+      const tbody = document.querySelector('#appsTable tbody');
+      tbody.innerHTML = '';
+
+      mockApplications.forEach(app => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${escapeHtml(String(app.id))}</td>
+          <td><strong>${escapeHtml(app.studentName)}</strong><div class="muted">${escapeHtml(app.studentId)}</div></td>
+          <td>${escapeHtml(internships.find(i=>i.id===app.internshipId)?.role || '')}</td>
+          <td>${escapeHtml(app.major)} • ${escapeHtml(app.gpa)}</td>
+          <td>${escapeHtml(app.languages.join(', '))}</td>
+          <td>${escapeHtml(app.appliedDate)}</td>
+          <td><span class="status ${app.status === 'Pending' ? 'status-pending' : app.status === 'Accepted' ? 'status-accepted' : 'status-rejected'}">${escapeHtml(app.status)}</span></td>
+          <td>${app.comment ? escapeHtml(app.comment) : '<span class="muted">—</span>'}</td>
+          <td class="action-cell"></td>
+        `;
+        const actionCell = tr.querySelector('.action-cell');
+        if (app.status === 'Pending') {
+          const acc = document.createElement('button'); acc.className = 'btn btn-primary'; acc.textContent = 'Accept';
+          acc.addEventListener('click', () => openAdminCommentModal(app.id, 'Accepted'));
+          const rej = document.createElement('button'); rej.className = 'btn btn-danger'; rej.style.marginLeft = '8px'; rej.textContent = 'Reject';
+          rej.addEventListener('click', () => openAdminCommentModal(app.id, 'Rejected'));
+          actionCell.appendChild(acc); actionCell.appendChild(rej);
+        } else {
+          const view = document.createElement('button'); view.className = 'btn btn-ghost'; view.textContent = 'View';
+          view.addEventListener('click', () => viewApplication(app.id));
+          actionCell.appendChild(view);
+        }
+        tbody.appendChild(tr);
+      });
+    }
+
+    /**********************
+     * Admin: comment modal flow
+     * - When Accept/Reject clicked, open a modal to allow admin to add a comment.
+     * - Default comments provided but admin may edit.
+     **********************/
+    function openAdminCommentModal(appId, status) {
+      const app = mockApplications.find(a => a.id === appId);
+      if (!app) return;
+
+      // sensible defaults
+      const defaultComment = status === 'Accepted'
+        ? 'All the best!'
+        : 'Better luck next time.';
+
+      showModal(`
+        <h3 class="modal-title">Mark ${escapeHtml(String(app.id))} as ${escapeHtml(status)}</h3>
+        <form id="adminCommentForm">
+          <label>Student: <strong>${escapeHtml(app.studentName)}</strong> (${escapeHtml(app.studentId)})</label>
+          <label style="margin-top:10px;">Comment<textarea name="adminComment" id="adminComment">${escapeHtml(app.comment || defaultComment)}</textarea></label>
+          <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:10px;">
+            <button class="btn btn-ghost" type="button" id="adminCommentCancel">Cancel</button>
+            <button class="btn btn-primary" type="submit">Confirm</button>
+          </div>
+        </form>
+      `);
+
+      document.getElementById('adminCommentCancel').addEventListener('click', closeModal);
+      document.getElementById('adminCommentForm').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(ev.target);
+        const comment = (fd.get('adminComment') || '').trim();
+        adminUpdateFinal(appId, status, comment || null);
+        closeModal();
+      });
+    }
+
+    function adminUpdateFinal(appId, status, comment) {
+      mockApplications = mockApplications.map(a => a.id === appId ? { ...a, status, comment } : a);
+      showToast({ title: `Application ${status}`, variant: status === 'Rejected' ? 'destructive' : 'default' });
+      refreshAdminTable();
+
+      // if student currently logged in, re-render their applications to show the message
+      if (auth.role === 'student') renderMyApplications();
+    }
+
+    function viewApplication(id) {
+      const app = mockApplications.find(a => a.id === id);
+      if (!app) return;
+      showModal(`
+        <h3 class="modal-title">Application #${escapeHtml(String(id))}</h3>
+        <p><strong>${escapeHtml(app.studentName)}</strong> (${escapeHtml(app.studentId)})</p>
+        <p>${escapeHtml(app.major)} • GPA: ${escapeHtml(app.gpa)}</p>
+        <p><strong>Internship:</strong> ${escapeHtml(internships.find(i=>i.id===app.internshipId)?.role || '')}</p>
+        <p><strong>Skills:</strong> ${escapeHtml(app.languages.join(', '))}</p>
+        ${app.comment ? `<div class="app-message"><strong>Message:</strong> ${escapeHtml(app.comment)}</div>` : ''}
+        <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button class="btn btn-ghost" id="closeAppView">Close</button></div>
+      `);
+      document.getElementById('closeAppView').addEventListener('click', closeModal);
+    }
+
+    // Start app at main login
+    renderMainLogin();
+  </script>
+
+  <footer style="text-align:center;color:#556;font-size:13px;margin-top:20px;">Mock UI • Client-side only</footer>
+</body>
+</html>
